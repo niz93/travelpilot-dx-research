@@ -45,8 +45,8 @@ For Germany, 335,541 of 335,584 sectors reconstructed exactly. For Czech/Poland,
 | `MAP00001.MAP` | Main TPMAP2 cartographic container; one per disc |
 | `NAVxxxxx.DAT` | TPNAV2_COMPRESSED navigation data |
 | `NAVECE_M.EXE` | NEC V810 navigation executable |
-| `QUADIDX.DAT` | Large separate index associated with GIS/iPublish |
-| `RF_*.DAT` | MERIAN/iPublish data |
+| `QUADIDX.DAT` | Name/POI **search index** (GDF-derived quad index); INFO.TXT tag `Quad-Idx …_GIS`; decoded header, see §4.1 |
+| `RF_1_1_{_,G,Z}.DAT` | **Travel-guide search indexes**; INFO.TXT tag `Quad-Idx …_rf …travel_guide.1..3`; same header family as QUADIDX |
 | `V01_*`, `V01_N06*` | Language/speech resources |
 | `*.NTL`, `*.DNL`, `CCTMCLUT.DAT` | RDS-TMC tables/data |
 | `CONFIG.SYS`, `PARAM.SYS` | Program, language, and head-unit configuration |
@@ -54,6 +54,48 @@ For Germany, 335,541 of 335,584 sectors reconstructed exactly. For Czech/Poland,
 | `DFLASHDL.BEX` | Download/update component, not a map editor |
 
 All 1,983 NAV files in the initially extracted Germany, Czech/Poland, and Major Roads sets contain TPNAV2_COMPRESSED signatures within their first 16 KiB. The signature offset is not fixed.
+
+### 4.1. QUADIDX.DAT / RF: search indexes, not routing
+
+Per-disc `INFO.TXT` lists every index file of the Quad-Idx family explicitly, e.g. Czech/Poland 2010-2011:
+
+```text
+Quad-Idx: quad2-TA_CZEPOL09.09_GIS v4                       -> QUADIDX.DAT
+Quad-Idx: quad2-TA_CZEPOL05.3_rf v2 rf_1_1__.travel_guide.1 -> RF_1_1__.DAT
+Quad-Idx: quad2-TA_CZEPOL05.3_rf v2 rf_1_1_g.travel_guide.2 -> RF_1_1_G.DAT
+Quad-Idx: quad2-TA_CZEPOL05.3_rf v2 rf_1_1_z.travel_guide.3 -> RF_1_1_Z.DAT
+```
+
+The QUADIDX header is byte-identical on all five examined discs in [0x00..0x6E] and fully decoded:
+
+| Offset | Value | Meaning |
+|---|---|---|
+| +0x00 u16 | 0x0069 (105) | end of fixed header strings |
+| +0x02 u16 | 3 | format version |
+| +0x04 u32 | 0x6A (106) | start of u16 string-offset table |
+| +0x08/+0x0C u32 | 0x24E (590) | end of string section = start of binary data |
+| +0x10 u32 | 0x1E4 (484) | boundary inside the string table (semantics TBD) |
+| +0x1C | `0A2.22.19:27:41` | generator version |
+| +0x2F | `Blaupunkt GmbH … @(#)cl_gdf_2_sie.pkb 2.5` | GDF toolchain |
+| +0x6A | u16[N], offsets relative to +0x6A | UI string directory |
+
+Decoded strings (cp1252, German) are destination-search menu texts: *Verkehr, Keine Daten, Ortsauswahl, Zielumgebung, Standortumgebung, Ort A-Z, Ort eingeben, Ortsliste, Alle/Ziel auswählen, Alle anzeigen, Eingabe A-Z, Sortieren Distanz/A-Z, Name eingeben, Zielführung, Hauptmenü, Voriges/Aktuelles/Nächstes Objekt*. RF files share the family header (magic u16 0x0064, version 3; generator `Robert-Bosch-Data PTP-Hi-ah … 2.0`) with three u32 section pointers at +0x58.
+
+In the firmware (`NAVECE_M.EXE`, NEC V810) the strings `QUADIDX.DAT` @ `ram:ffc0bbd4` and the template `RF_1_1_?.DAT` @ `ram:ffc0bbc4` sit inside the SDI/CDROM-FS router string region; neither has a direct code reference (no Ghidra xref, no MOVHI+MOVEA pair, no u32 pointer cell) — filenames are assembled in RAM at runtime while the FS enumerates the CD directory (formats `%d%c%d`, `%s%c `, `/Card%d/` nearby).
+
+**Consequence for custom discs:** cluster addressing for routing most likely does not flow through QUADIDX at all; it should live in the MAP00001.MAP (TPMAP2 catalog) / NAV entry-table pair. A custom disc can plausibly keep the donor QUADIDX/RF (stale name search) or ship regenerated stubs — to be confirmed by tracing the coordinate→NAV-file open path and by a head-unit substitution test.
+
+### 4.2. NAV file selection: two candidates rejected, one active
+
+Tracing how the firmware picks a `NAVxxxxx.DAT` for a position (15.11.2026):
+
+- The literal "NAV" appears in code only in the NAVDEMO task (`nd_tsk.c`); production filenames are assembled at runtime (`%d%c%d`, `%s%c ` formats at `ram:ffc0bbe8/bbf4`, no direct references).
+- `map_file_open` (`ram:ffc4fe7e`) has a single caller and opens only `MAP00001.MAP`. NAV data is read through the block cache readers (`ram:ffc4f310`, `ram:ffc4f4f2`) sitting on `map_file_read` (`ram:ffc4feb2`, 18 callers) — i.e. by handle/index through the SDI layer, not by per-request name lookup.
+- **Rejected: MAP stores NAV file numbers.** Intersections of the MAP u32 value set with each disc's NAV number set are at chance level in both directions (Czech/Poland MAP: own 25/318 vs foreign 70/897 ≈ 7.9% vs 7.8%; Germany MAP: 84/897 vs 31/318).
+- **Rejected: TPMAP2 catalog block ↔ NAV file 1:1.** Catalog record counts (1/12/1320/132000 for CZ/POL; 1/12/1200/120000 for DE) do not correlate with NAV file counts (318/897).
+- **Active candidate: `NAV00001.DAT` is a paged sorted index.** Its blocks (322 records on CZ/POL, 413 on DE) share a common header; the first u32 key of each block increases monotonically across blocks on both discs (CZ: 0x5f52 → 0x9e29 → 0xddaa → 0xe5b28 → 0x289660; DE: 0x4ca1 → 0x7a72 → 0xab8d), a binary-searchable directory. A second u32 rises in small steps; a third stays near-constant (0x601e0…0x601f0); record chains inside blocks ascend with step ~0x3d. Whether keys are coordinates, file indices, or search terms is under decoding; consumer code in the firmware is being located via the block-read caller tree.
+
+Headless-analysis recipe, script inventory, and key firmware addresses: `docs/GHIDRA.md`.
 
 ## 5. TPMAP2
 
@@ -210,12 +252,72 @@ Raw endpoint fields cannot correctly be validated before this rewrite. Unresolve
 | Czech/Poland 2010–2011 `NAV20001.DAT` | 33 | 26 |
 | **Total** | **128** | **37** |
 
-A zero means no fully local graph under the strict criterion, not absence of navigation data. Other blocks parse structurally but have unresolved endpoints. Cross-cluster or external references are not yet established.
+A zero means no fully local graph under the strict criterion, not absence of navigation data. Other blocks parse structurally but have unresolved endpoints.
+
+### Cross-cluster boundary transitions (confirmed 2026-11-14)
+
+Unresolved endpoints are cluster-boundary exits, and the stitching key is the pair (word body, geometry):
+
+1. Local nodes of links with an unresolved endpoint sit twice as close to the cluster bounds edge as nodes in general (median relative distance 0.054 of cluster size vs 0.113).
+2. For two clusters with overlapping bounds, links with unresolved endpoints whose raw words share the same body `(raw & 0x3ff)` have local endpoints that coincide spatially: 51 consistent pairs, median offset 55 internal units (~20 m), maximum ~500 units. Full words may differ in high bits (`0xe075` in one cluster vs `0xa075` in the neighbor), so the body is the boundary-crossing number while high bits are attributes (0x8000 selects the first/second endpoint; 0x4000 and other bits mark side/type).
+3. The word identifies the boundary, not a single node: five distinct links in Europe entry 0462 sharing word `0xe075` each stitch to a distinct link with `0xa075` in neighboring clusters 0488/0525.
+
+Coverage of the 948 unresolved endpoints by this rule is currently limited only by the sample: 24 NAV files out of ~1,983 on the discs were unpacked and indexed, so most boundary neighbors are absent from the stitch index. A full-NAV run is the next step.
+
+Six pairs of consecutive entries with identical cluster `base`/bounds (95/96, 455/456, 457/458, 459/460, 469/470, 471/472) form a detail hierarchy: the small block is a coarse level (3–12 nodes, through-links of 82k–536k internal units crossing the whole area, coverage 0.88–1.0) and the large block is a fine level (29–184 nodes, median link 4.6k–10k). The level-selection rule used by the router is not yet recovered.
+
+Link weight attribute: `field04_le32` of a resolved link equals the geometric path length divided by a stable factor of ~316.3 internal units (median ratio 316.3, range 294–347 over 105 buckets, prediction residual p90 = 3.2 %). It is computable from geometry when generating a cluster: `field04 = round(path_length / 316.3)`. A road-class attribute is not isolated yet; link flags are a subsection mask.
 
 Control examples:
 
 - Czech/Poland entry 241: 11 nodes, 11 links, 21 references, zero conflicts/errors.
 - Germany entry 158: 346 nodes, 356 links, 709 references, zero conflicts/errors.
+
+### 6.3 Subsection layout, graph mutation, and NAV write-back (confirmed 2026-11-14)
+
+Full subsection layout, validated by area-tiling across all 128 parsed clusters (zero hard overlaps; apparent overlaps are content deduplication):
+
+- Nodes with flag bit `0x0001` carry a second four-byte descriptor before the link-list descriptor: `(offset, count)` pointing into the node-subsection area, payload of `count` items × 4 bytes. Semantics unknown; carried raw. All payload offsets are 2-byte aligned; 3,746 of 9,711 are not 4-byte aligned.
+- Link subsection descriptors form one contiguous array at `subsection_base` (4 bytes per set bit 0..4, in bit order); payloads live separately. Strides: shape/list4 4 bytes per item; annotations (bit 0) and unknown bit 2 payloads are **2 bytes per item** (17,121 and 12,649 occurrences across 35,876 links). Links with no subsection bits carry a stale unused `subsection_base`.
+- Node link references are one-based link numbers; bit `0x8000` marks the node as the link's second endpoint.
+
+`tools/tpnav2_graph_mutate.py` builds a `ClusterModel` (all node/link fields plus raw prefix/annotation/bit2 payloads and unknown small-section blobs), mutates it, and performs a full re-layout: node descriptor chains, node prefix/ref payloads, link descriptor arrays and payloads, section table, and node coordinates regenerated from the model. Batch test `tools/test_tpnav2_mutate.py` on five clusters (including the richest shape/list4/prefix cases):
+
+- appending a node and a link resolves from both node-link references with zero endpoint conflicts;
+- serialization is idempotent (mutate → parse → re-serialize is byte-identical);
+- all pre-existing nodes, links, bounds, and header fields survive unchanged; raw payloads survive byte-for-byte;
+- the validation-error set after mutation exactly equals the original set (no errors introduced or lost).
+
+`tools/tpnav2_nav_patch.py` writes a mutated cluster back into a NAV container. For compressed entries (253 of 256 in `NAV20001.DAT`), the padded-to-logical-size uncompressed block is appended at end of file and its remap entry rewritten to point at it with `compression_flag = 0`, mirroring the firmware's backward search for the last exact logical match. End-to-end check: patched container re-opened, block decoded, graph parsed with zero errors/conflicts, semantic identity with the reference mutation, and all 256/256 entries still decode.
+
+Round-trip provenance: `tpnav2_graph_write.py` rebuilds all 128 clusters byte-identically (conservative in-place strategy); the parser output is complete for the graph layer.
+
+### 6.4 Cluster generator from a minimal model (confirmed 2026-11-14)
+
+`tools/tpnav2_cluster_gen.py` (`ClusterBuilder`) emits a valid cluster with no source bytes: header per live conventions (`byte02=8`, `byte03=1`, `field11=4`, `field04_le32=0xB8010001`, four bounds corners), sections `0x0040/0x0080/0x0400` only, absolute-internal-coordinate API (`abs = base + (delta << shift)`), link weight `field04 = round(path_length / 316.3)` from geometry, and self-assigned boundary words (`0xA000|body` / `0xE000|body`, matching the observed `0xa075↔0xe075` pair pattern). Bodies are chosen above the node count so the parser's raw fallback stays out of range — the boundary end remains unresolved exactly like live data (a body inside the node range would silently pseudo-resolve to a real node, a quirk also present in live clusters such as entry 0241, where node 1's reference `0x0C0B` shadows the boundary word `0xE075`).
+
+Demo: two neighbouring generated clusters (158 B and 146 B) sharing boundary x=15000 with overlapping bounds parse with zero conflicts and exactly one expected out-of-range fallback error each, serialize idempotently through the mutator round-trip, and stitch under the confirmed rule: `0xA25F ↔ 0xE25F`, body 607, local-end distance 0.0.
+
+### 6.5 OSM region grid and from-scratch NAV container (confirmed 2026-11-14)
+
+`tools/tpdx_osm_grid.py` turns an OSM extract into a stitched grid of generated clusters:
+
+- drivable highway classes are decimated (20 m step; shared intersection vertices and way terminals always kept), split at uniform cell borders, and each border crossing becomes a shared node in both adjacent clusters plus a boundary word link (`node(cut)→word`, field04=0); geometry from the crossing into the cell is a normal link carrying intermediate vertices as shape points;
+- boundary word bodies are assigned after the whole grid is built: `body = 1023 − pair_ordinal`, largest clusters claiming the highest bodies first, with the hard check `body > max(nodesA, nodesB)` (10-bit refs: ≤1000 links and ≤1023 nodes per cluster; ≤0xFFF0 bytes per cluster); the grid refines automatically (×2 per axis, up to 32×32) until all limits hold;
+- three defects found and fixed during validation: link-number leakage into the 10-bit reference field, neighbour identification by point reflection (wrong at shallow crossing angles — replaced by the crossing axis), and zero-area runs (way ending exactly on a border / corner clips — absorbed into neighbours).
+
+Results on real OSM extracts (Overpass API):
+
+| Region | Ways | Grid | Clusters | Boundary ends | Stitched | Conflicts |
+|---|---:|---:|---:|---:|---:|---:|
+| Olomouc (13×15 km) | 15,702 | 32×32 | 565 | 4,850 | 4,850 (100 %) | 0 |
+| Krasnodar, Russia (17×28 km) | 26,477 | 32×32 | 565 | 11,344 | 11,344 (100 %) | 0 |
+
+Visual check (`tools/render_grid_check.py`, `results/grid-check-krasnodar.png`): generated geometry overlays the OSM street network exactly, including the Kuban river bend and radial highways.
+
+`tools/tpnav2_nav_build.py` assembles a NAV container from scratch, mirroring observed real conventions: contiguous logical image starting at offset 320, `<IHHIHH>` entries with field06=0, uncompressed blocks (flag=0) packed after the table, and the 320-byte file head copied from a real container. The Krasnodar container holds 565 entries (the format's u32 entry_count allows more than the donor's 256) in 1,967,788 bytes; every entry round-trips byte-identically through our own reader with zero endpoint conflicts. Firmware acceptance of >256 entries and of our logical addressing scheme is verifiable only on a head unit.
+
+Remaining blocker for a bootable disc: the disc-level index (`QUADIDX.DAT`/CAT files) mapping geography to logical NAV addresses is not yet reverse-engineered.
 
 ## 7. Executable and emulation
 
@@ -250,14 +352,18 @@ No complete working chain for these steps is claimed. No CD-R recording or head-
 | Read TPMAP2 metadata/directories | Complete for checked formats |
 | Render TPMAP2 geometry | Working in internal units |
 | Decompress TPNAV2 | Validated on 3,815 entries |
-| Recover local TPNAV2 nodes/links | Working for 37 of 128 candidates |
+| Recover local TPNAV2 nodes/links | Working for 37 of 128 candidates; parser matches the firmware load pass |
 | Render fully classified roads | Incomplete; type semantics remain unresolved |
-| Build a global routing graph | Incomplete; cross-cluster links and attributes are missing |
-| Convert coordinates to WGS84 | Not established |
-| Edit a road and serialize all data | Not implemented |
-| Build an updated map from OSM | No working pipeline |
+| Build a global routing graph | Cross-cluster stitching confirmed on the full Germany run: 20,254 of 82,807 boundary ends stitched (24.5 %), median offset ~10 m; remainder explained by absent neighbour countries / duplicate boundary numbers |
+| Convert coordinates to WGS84 | Fitted datum: X = 11.93M·lon, Y = 11.93M·lat (plate-carree-like; 1 unit ≈ 9.3 mm), 249 city-label anchors, residual median ~0.6 km; sufficient for OSM import, not for stitching to untouched clusters (~10 m would need a geometry-based refit) |
+| Edit a road and serialize all data | Graph mutation with full re-layout proven (idempotent, lossless, zero new validation errors on 5 clusters); NAV container write-back proven end-to-end (256/256 entries still decode) |
+| Build an updated map from OSM | **Cluster grid proven on real regions**: Olomouc 4,850/4,850 boundary ends stitched, Krasnodar 11,344/11,344, zero conflicts; NAV container from scratch (565 entries) round-trips byte-identically. Missing: disc-level index (QUADIDX/CAT), road attributes, head-unit test |
 | Validate a modified CD-R on hardware | Not performed |
 
 ## 10. Next research target
+
+Coordinate→NAV-file open path: trace how the firmware selects a `NAVxxxxx.DAT` for a position — starting from `map_open_directory` (`ram:ffcf0798`, callers in the analysis tree) and checking whether TPMAP2 carries NAV file numbers. This replaces the former "reverse QUADIDX" target: iteration 8 (report §4.11, technical report §4.1) established that QUADIDX/RF are name-search indexes (GIS + travel guides per INFO.TXT), not routing address maps, and that their headers are fully decoded; a custom disc can plausibly keep donor indexes until proven otherwise.
+
+In parallel: road attributes for routing (class, speed, direction) from link-flag/list4 correlations, and a geometry-based datum refit (~10 m) only for discs that stitch generated clusters to untouched TeleAtlas neighbours.
 
 Recover nonlocal/cross-cluster TPNAV2 endpoint references. Aligning the resulting graph with TPMAP2 geometry should also help resolve the semantics of `0x10` and `0xf0` without guessing from appearance alone.

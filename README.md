@@ -4,7 +4,7 @@ Open, read-only research tools for TeleAtlas / Blaupunkt TravelPilot DX navigati
 
 The repository contains Python decoders, validation tools, a one-command Windows 10 visualization script, compact research results, and rendered examples. **No disc images, ISO files, extracted navigation databases, firmware images, or other large source data are included.**
 
-> Research preview: TPMAP2 geometry and selected local TPNAV2 graphs can be decoded and rendered. This is not a finished map editor, a WGS84 converter, or a routing application. No modified disc has been validated on a head unit.
+> Research preview: TPMAP2 geometry and selected local TPNAV2 graphs can be decoded and rendered. A stitched grid of TPNAV2 clusters can be generated from OpenStreetMap data, and a NAV container can be assembled from scratch. Iteration 8 (2026-11) established that QUADIDX/RF are name-search indexes rather than the routing address map, and narrowed the disc-level addressing question to NAV00001.DAT — but no disc with generated data has been validated on a head unit.
 
 ## Reported compatible head units
 
@@ -99,8 +99,15 @@ See [the detailed Windows guide](docs/WINDOWS.md).
 - **37 of 128** examined graph candidates yielded fully locally consistent node/link topology. The remaining candidates contain unresolved nonlocal endpoints or unclassified sections; this does not imply that they contain no navigation data.
 - Selected line styles and hydrographic labels were established. The semantics of types `0x10` and `0xf0` remain unresolved.
 - Same-length replacement of an ISO file inside a CloneCD copy was tested at sector level. This is not a map-editing test or a head-unit compatibility test.
+- A fitted plate-carree-like datum converts internal units to WGS84 (1 unit ≈ 9.3 mm; 249 city-label anchors; residual median ~0.6 km — sufficient for generating self-consistent regions, not for stitching to untouched TeleAtlas clusters).
+- **OSM → TPNAV2 cluster grid proven**: Olomouc 4,850/4,850 boundary ends stitched, Krasnodar 11,344/11,344, zero endpoint conflicts, automatic grid refinement up to 32×32 (`tools/tpdx_osm_grid.py`, `tools/fetch_osm.py`).
+- **NAV container assembly from scratch proven**: 565 generated clusters round-trip byte-identically (`tools/tpnav2_nav_build.py`); cluster synthesis without a donor image (`tools/tpnav2_cluster_gen.py`), graph mutation with full re-layout (`tools/tpnav2_graph_mutate.py`), and sector-safe same-length patching of a NAV inside a CloneCD image (`tools/tpnav2_nav_patch.py`).
+- Boundary-transition stitching statistics for Germany (897 NAV files, 20,254 matched ends, 73 unique transition bodies) are published in `results/boundary-body-matches.json` and `results/boundary-word-matches.json`.
+- **QUADIDX.DAT / RF_1_1_*.DAT are name-search indexes** (destination and travel-guide search), not the routing address map: each disc's `INFO.TXT` lists them as `Quad-Idx …_GIS` and `…rf …travel_guide`, the decoded header carries destination-search UI strings ("Ort A-Z", "Name eingeben", "Zielführung"), and the firmware holds no direct references (names are assembled in RAM). Details: `docs/TECHNICAL_REPORT.md` §4.1.
+- **MAP↔NAV linkage candidates rejected** (2026-11): MAP00001.MAP does not store NAV file numbers (chance-level intersections), and TPMAP2 catalog blocks do not correspond 1:1 to NAV files. NAV containers are read by handle through a block cache. The current addressing candidate is `NAV00001.DAT`, a paged sorted index whose block-leading keys increase monotonically on two discs — under active decoding.
+- Firmware reverse-engineering is reproducible with the bundled Ghidra scripts; see `docs/GHIDRA.md` for the headless recipe (including the `-process` naming pitfall).
 
-Coordinates produced by the renderers are **signed internal TPMAP2/TPNAV2 integer units, not WGS84**.
+Coordinates produced by the renderers are **signed internal TPMAP2/TPNAV2 integer units, not WGS84**; the fitted datum in `results/tpdx-datum.json` converts them (`tools/tpdx_coords.py`).
 
 ## Rendered examples
 
@@ -111,6 +118,10 @@ Coordinates produced by the renderers are **signed internal TPMAP2/TPNAV2 intege
 | Small TPNAV2 local graph | Larger TPNAV2 local graph |
 |---|---|
 | ![Small TPNAV2 graph](examples/entry-0241-lo000b3250.png) | ![Larger TPNAV2 graph](examples/entry-0158-lo000c55b0.png) |
+
+| OSM (gray) vs generated TPNAV2 grid, Krasnodar |
+|---|
+| ![Krasnodar OSM vs generated grid](results/grid-check-krasnodar.png) |
 
 ## Manual Python usage
 
@@ -138,21 +149,24 @@ Integration tests that require private source discs are skipped when those data 
 visualize.ps1 / visualize.bat  Windows 10 bootstrap and end-to-end rendering
 requirements.txt              Python dependencies
 tools/                        CloneCD, ISO, TPMAP2 and TPNAV2 research tools
+tools/ghidra_scripts/         Ghidra headless scripts (see docs/GHIDRA.md)
 tests/                        Self-contained regression tests
 examples/                     Small rendered PNG examples
 results/                      Compact validation reports and surveys
-docs/                         Windows instructions, format notes and sources
+docs/                         Windows instructions, format notes, sources,
+                              and the Ghidra firmware-analysis recipe
 ```
+
+Generation pipeline (tools): `tpdx_osm_grid.py` (OSM→cluster grid), `tpnav2_cluster_gen.py` (cluster synthesis), `tpnav2_nav_build.py` (NAV container assembly), `tpnav2_graph_mutate.py` / `tpnav2_graph_write.py` (model mutation + serialization), `tpnav2_nav_patch.py` (CloneCD image patching), `tpdx_coords.py` + `tpdx_datum_fit.py` (WGS84 datum). Survey/analysis tools: `tpnav2_endpoint_survey.py`, `tpnav2_cross_probe.py`, `tpnav2_shared_coords.py`, `tpnav2_firmware_pass.py`, `tpnav2_germany_stitch.py`, `tpdx_label_survey.py`, `tpmap_directory.py`. Several research tools default to an `extracted/` + `analysis/` workspace layout and expect disc-derived data that is not distributed here.
 
 ## Scope and limitations
 
 Not yet implemented:
 
-- cross-cluster TPNAV2 references and a complete routing graph;
 - complete road attributes, turn restrictions, address and search indexes;
-- a proven transformation to WGS84;
-- TPMAP2/TPNAV2 serialization and map editing;
-- an OSM-to-DX build pipeline;
+- the disc-level coordinate→NAV addressing path: QUADIDX is proven to be a name-search index, MAP↔NAV number links are rejected; `NAV00001.DAT` (paged sorted index) is the active candidate and is not yet decoded;
+- TPMAP2 serialization (TPNAV2 graph serialization is proven);
+- firmware acceptance tests of generated clusters and of >256 entries per NAV file (verifiable only on a head unit);
 - emulation of a complete head unit;
 - validation of a modified CD-R on physical hardware.
 
@@ -162,6 +176,7 @@ The included same-length CloneCD patcher is experimental. Work only with copies,
 
 - [Windows 10 visualization guide](docs/WINDOWS.md)
 - [Technical report](docs/TECHNICAL_REPORT.md)
+- [Ghidra firmware-analysis recipe](docs/GHIDRA.md)
 - [References and provenance](docs/SOURCES.md)
 
 ## Legal and project status
