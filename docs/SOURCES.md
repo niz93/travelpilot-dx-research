@@ -46,6 +46,12 @@ The presence of `gdf_syntax.GDF_3_0.1.1` and related compilation metadata establ
 12. Auto Świat, “Fabryczna nawigacja – prowadzi w stronę kłopotów”  
     https://www.auto-swiat.pl/porady/fabryczna-nawigacja-prowadzi-w-strone-klopotow/875cpre
 
+13. DRIVE2 (Russian), “Анализируем навигаторы на основе Blaupunkt-TravelPilot-DX” — early community file-signature analysis (`TPNAV2_COMPRESSED` markers, `info.txt` and `MAP00001.MAP` header breakdown)  
+    https://www.drive2.ru/b/625641908487587604/
+
+14. DRIVE2 (Russian), earlier companion post by the same author introducing the format-research effort and pointing to the OSM Community thread  
+    https://www.drive2.ru/b/459571122472515752/
+
 The external compatibility listings are cross-references, not hardware validation. Their published model-year ranges and naming conventions vary.
 
 ## Third-party software
