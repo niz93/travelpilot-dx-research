@@ -1,0 +1,31 @@
+# Local Python runtime and environments
+.runtime/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Generated visualization and extraction data
+output/
+validation-output/
+*.iso
+*.img
+*.sub
+*.ccd
+*.MAP
+*.DAT
+*_manifest.json
+
+# Local research workspaces
+extracted/
+iso/
+inputs/
+sources/
+analysis/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

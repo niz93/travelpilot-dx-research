@@ -1,0 +1,302 @@
+[
+  {
+    "file": "extracted\\germany\\MAP00001.MAP",
+    "file_size": 65161836,
+    "bounds": [
+      67765038,
+      558345748,
+      181581671,
+      657368604
+    ],
+    "coordinate_system": "TPMAP2 signed integer map units; WGS84 transform not yet established",
+    "levels": [
+      {
+        "level": 0,
+        "record_count": 1,
+        "sample_count": 1,
+        "accepted": 1,
+        "decoded_lines": 25,
+        "decoded_points": 15,
+        "line_types": {
+          "16": 25
+        },
+        "point_types": {
+          "34": 2,
+          "36": 2,
+          "37": 11
+        },
+        "errors": []
+      },
+      {
+        "level": 1,
+        "record_count": 12,
+        "sample_count": 12,
+        "accepted": 12,
+        "decoded_lines": 565,
+        "decoded_points": 199,
+        "line_types": {
+          "16": 122,
+          "208": 443
+        },
+        "point_types": {
+          "34": 2,
+          "36": 2,
+          "37": 11,
+          "39": 73,
+          "40": 111
+        },
+        "errors": []
+      },
+      {
+        "level": 2,
+        "record_count": 1200,
+        "sample_count": 61,
+        "accepted": 61,
+        "decoded_lines": 191,
+        "decoded_points": 1177,
+        "line_types": {
+          "16": 128,
+          "208": 63
+        },
+        "point_types": {
+          "39": 6,
+          "40": 4,
+          "42": 78,
+          "43": 784,
+          "65": 7,
+          "66": 16,
+          "67": 149,
+          "69": 133
+        },
+        "errors": []
+      },
+      {
+        "level": 3,
+        "record_count": 120000,
+        "sample_count": 63,
+        "accepted": 63,
+        "decoded_lines": 34,
+        "decoded_points": 162,
+        "line_types": {
+          "16": 1,
+          "208": 7,
+          "240": 26
+        },
+        "point_types": {
+          "39": 1,
+          "42": 1,
+          "43": 9,
+          "44": 63,
+          "67": 2,
+          "69": 2,
+          "81": 5,
+          "86": 45,
+          "87": 3,
+          "90": 7,
+          "92": 6,
+          "93": 4,
+          "94": 1,
+          "95": 1,
+          "96": 1,
+          "99": 1,
+          "226": 2,
+          "227": 1,
+          "228": 1,
+          "236": 1,
+          "237": 1,
+          "238": 1,
+          "244": 1,
+          "245": 1,
+          "248": 1
+        },
+        "errors": []
+      }
+    ]
+  },
+  {
+    "file": "extracted\\czech_poland\\MAP00001.MAP",
+    "file_size": 31923260,
+    "bounds": [
+      139758373,
+      579224061,
+      292601667,
+      657368604
+    ],
+    "coordinate_system": "TPMAP2 signed integer map units; WGS84 transform not yet established",
+    "levels": [
+      {
+        "level": 0,
+        "record_count": 1,
+        "sample_count": 1,
+        "accepted": 1,
+        "decoded_lines": 12,
+        "decoded_points": 6,
+        "line_types": {
+          "16": 12
+        },
+        "point_types": {
+          "34": 2,
+          "37": 4
+        },
+        "errors": []
+      },
+      {
+        "level": 1,
+        "record_count": 12,
+        "sample_count": 12,
+        "accepted": 12,
+        "decoded_lines": 375,
+        "decoded_points": 108,
+        "line_types": {
+          "16": 136,
+          "208": 239
+        },
+        "point_types": {
+          "34": 2,
+          "37": 4,
+          "39": 38,
+          "40": 64
+        },
+        "errors": []
+      },
+      {
+        "level": 2,
+        "record_count": 1320,
+        "sample_count": 63,
+        "accepted": 63,
+        "decoded_lines": 574,
+        "decoded_points": 511,
+        "line_types": {
+          "16": 511,
+          "208": 63
+        },
+        "point_types": {
+          "42": 29,
+          "43": 422,
+          "66": 19,
+          "67": 9,
+          "69": 32
+        },
+        "errors": []
+      },
+      {
+        "level": 3,
+        "record_count": 132000,
+        "sample_count": 64,
+        "accepted": 64,
+        "decoded_lines": 31,
+        "decoded_points": 51,
+        "line_types": {
+          "16": 16,
+          "208": 1,
+          "240": 14
+        },
+        "point_types": {
+          "43": 3,
+          "44": 35,
+          "81": 2,
+          "84": 1,
+          "86": 1,
+          "87": 2,
+          "90": 4,
+          "96": 3
+        },
+        "errors": []
+      }
+    ]
+  },
+  {
+    "file": "extracted\\mre\\MAP00001.MAP",
+    "file_size": 189075436,
+    "bounds": [
+      -226678829,
+      322122546,
+      235030153,
+      714634835
+    ],
+    "coordinate_system": "TPMAP2 signed integer map units; WGS84 transform not yet established",
+    "levels": [
+      {
+        "level": 0,
+        "record_count": 1,
+        "sample_count": 1,
+        "accepted": 1,
+        "decoded_lines": 63,
+        "decoded_points": 40,
+        "line_types": {
+          "16": 62,
+          "208": 1
+        },
+        "point_types": {
+          "34": 15,
+          "36": 4,
+          "37": 21
+        },
+        "errors": []
+      },
+      {
+        "level": 1,
+        "record_count": 187,
+        "sample_count": 56,
+        "accepted": 56,
+        "decoded_lines": 472,
+        "decoded_points": 262,
+        "line_types": {
+          "16": 118,
+          "208": 354
+        },
+        "point_types": {
+          "34": 5,
+          "36": 1,
+          "37": 4,
+          "39": 86,
+          "40": 166
+        },
+        "errors": []
+      },
+      {
+        "level": 2,
+        "record_count": 18700,
+        "sample_count": 62,
+        "accepted": 62,
+        "decoded_lines": 66,
+        "decoded_points": 139,
+        "line_types": {
+          "16": 42,
+          "208": 24
+        },
+        "point_types": {
+          "40": 2,
+          "42": 5,
+          "43": 116,
+          "65": 1,
+          "66": 4,
+          "67": 7,
+          "69": 4
+        },
+        "errors": []
+      },
+      {
+        "level": 3,
+        "record_count": 1870000,
+        "sample_count": 62,
+        "accepted": 62,
+        "decoded_lines": 10,
+        "decoded_points": 9,
+        "line_types": {
+          "208": 2,
+          "240": 8
+        },
+        "point_types": {
+          "43": 3,
+          "44": 1,
+          "67": 1,
+          "69": 2,
+          "84": 1,
+          "90": 1
+        },
+        "errors": []
+      }
+    ]
+  }
+]
