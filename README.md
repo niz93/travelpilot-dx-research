@@ -4,7 +4,7 @@ Open, read-only research tools for TeleAtlas / Blaupunkt TravelPilot DX navigati
 
 The repository contains Python decoders, validation tools, a one-command Windows 10 visualization script, compact research results, and rendered examples. **No disc images, ISO files, extracted navigation databases, firmware images, or other large source data are included.**
 
-> Research preview: TPMAP2 geometry and selected local TPNAV2 graphs can be decoded and rendered. A stitched grid of TPNAV2 clusters can be generated from OpenStreetMap data, and a NAV container can be assembled from scratch. Iteration 8 (2026-11) established that QUADIDX/RF are name-search indexes rather than the routing address map, and narrowed the disc-level addressing question to NAV00001.DAT — but no disc with generated data has been validated on a head unit.
+> Research preview: TPMAP2 geometry and selected local TPNAV2 graphs can be decoded and rendered. A stitched grid of TPNAV2 clusters can be generated from OpenStreetMap data, and a NAV container can be assembled from scratch. The disc-level indexes (QUADIDX, NAV00001, RF) are resolved as destination-search data, every numbered addressing hypothesis is rejected statically, and the mount path is traced (lazy per-file mount + runtime cluster directory). A substitution test disc with a generated Krasnodar region is assembled and statically verified; the head-unit field test is the remaining gate.
 
 ## Reported compatible head units
 
@@ -104,7 +104,7 @@ See [the detailed Windows guide](docs/WINDOWS.md).
 - **NAV container assembly from scratch proven**: 565 generated clusters round-trip byte-identically (`tools/tpnav2_nav_build.py`); cluster synthesis without a donor image (`tools/tpnav2_cluster_gen.py`), graph mutation with full re-layout (`tools/tpnav2_graph_mutate.py`), and sector-safe same-length patching of a NAV inside a CloneCD image (`tools/tpnav2_nav_patch.py`).
 - Boundary-transition stitching statistics for Germany (897 NAV files, 20,254 matched ends, 73 unique transition bodies) are published in `results/boundary-body-matches.json` and `results/boundary-word-matches.json`.
 - **QUADIDX.DAT / RF_1_1_*.DAT are name-search indexes** (destination and travel-guide search), not the routing address map: each disc's `INFO.TXT` lists them as `Quad-Idx …_GIS` and `…rf …travel_guide`, the decoded header carries destination-search UI strings ("Ort A-Z", "Name eingeben", "Zielführung"), and the firmware holds no direct references (names are assembled in RAM). Details: `docs/TECHNICAL_REPORT.md` §4.1.
-- **MAP↔NAV linkage candidates rejected** (2026-11): MAP00001.MAP does not store NAV file numbers (chance-level intersections), and TPMAP2 catalog blocks do not correspond 1:1 to NAV files. NAV containers are read by handle through a block cache. The current addressing candidate is `NAV00001.DAT`, a paged sorted index whose block-leading keys increase monotonically on two discs — under active decoding.
+- **Addressing hypotheses resolved statically** (2026-11): MAP00001.MAP does not store NAV file numbers (chance-level intersections), TPMAP2 catalog blocks do not correspond 1:1 to NAV files, and `NAV00001.DAT` is the place-name directory (sorted records keyed by packed coordinates, cp1252 name pools with parent cross-references such as "RADVANICE A BARTOVICE [CZ]", "AACHEN, ZECHE") — a search component, not file addressing. NAV containers are read by handle through a block cache. The TeleAtlas file-numbering convention is rejected by a cross-disc test (`NAV21793.DAT` = Braunschweig on Germany but Naples on Major Roads of Europe). Mount-path tracing (iteration 10) shows lazy per-file mounting through an on-demand-sorted ISO directory plus a runtime cluster directory (`ldb_InsertCluster`, "Failed to find leaf cluster"); the file name is never computed from a coordinate. A substitution test disc (generated 565-cluster Krasnodar NAV replacing `NAV21315.DAT` in a Czech/Poland 2010-2011 CloneCD copy, same byte length, EDC/ECC regenerated) is assembled and statically verified; head-unit field test pending.
 - Firmware reverse-engineering is reproducible with the bundled Ghidra scripts; see `docs/GHIDRA.md` for the headless recipe (including the `-process` naming pitfall).
 
 Coordinates produced by the renderers are **signed internal TPMAP2/TPNAV2 integer units, not WGS84**; the fitted datum in `results/tpdx-datum.json` converts them (`tools/tpdx_coords.py`).
@@ -164,11 +164,11 @@ Generation pipeline (tools): `tpdx_osm_grid.py` (OSM→cluster grid), `tpnav2_cl
 Not yet implemented:
 
 - complete road attributes, turn restrictions, address and search indexes;
-- the disc-level coordinate→NAV addressing path: QUADIDX is proven to be a name-search index, MAP↔NAV number links are rejected; `NAV00001.DAT` (paged sorted index) is the active candidate and is not yet decoded;
+- the disc-level coordinate→NAV addressing path: statically resolved — QUADIDX is a name-search index, MAP↔NAV number links and the TeleAtlas numbering convention are rejected; surviving model: mount-time entry-table scan building an in-RAM bounds index (hardware test pending);
 - TPMAP2 serialization (TPNAV2 graph serialization is proven);
 - firmware acceptance tests of generated clusters and of >256 entries per NAV file (verifiable only on a head unit);
 - emulation of a complete head unit;
-- validation of a modified CD-R on physical hardware.
+- validation of a modified CD-R on physical hardware (substitution disc assembled and statically verified; burning and field test pending).
 
 The included same-length CloneCD patcher is experimental. Work only with copies, preserve the original `.ccd`, `.img`, and `.sub`, and do not assume that a byte-correct image will be accepted by a head unit.
 

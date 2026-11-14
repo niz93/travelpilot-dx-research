@@ -2,7 +2,7 @@
 
 Research date: 14 November 2026  
 Target: COMAND 2.0/2.5 and other DX-compatible devices  
-Hardware status: no physical head unit was tested
+Hardware status: no physical head unit was tested; a substitution test disc (generated Krasnodar container in a Czech/Poland 2010-2011 CloneCD copy) is assembled and statically verified, awaiting burning and field test
 
 ## 1. Executive summary
 
@@ -10,7 +10,7 @@ Eleven local CloneCD disc sets were examined: nine from 2013–2014 and two from
 
 The discs contain compiled Bosch formats rather than directly usable GDF source. `MAP00001.MAP` contains TPMAP2; `NAVxxxxx.DAT` files contain TPNAV2_COMPRESSED streams. Compilation metadata including `gdf_syntax.GDF_3_0.1.1` proves GDF input to the Bosch pipeline, not equivalence between compiled records and ISO GDF records.
 
-TPMAP2 geometry can be decoded and rendered. The TPNAV2 container and decompressor are validated, and selected local node/link graphs are recovered. A complete editor, global router, WGS84 conversion, and tested modified disc remain unavailable.
+TPMAP2 geometry can be decoded and rendered. The TPNAV2 container and decompressor are validated, and selected local node/link graphs are recovered. A cluster grid and NAV container can be generated from OpenStreetMap data. The addressing question (how the firmware maps a position to a NAV file) is statically resolved: all index/numbering hypotheses are rejected and mount-time scanning of entry-table bounds is the surviving model, pending a trace of the mount path and a head-unit substitution test. A complete editor, global router, road-attribute semantics, and a tested modified disc remain unavailable.
 
 ## 2. Source media
 
@@ -93,7 +93,15 @@ Tracing how the firmware picks a `NAVxxxxx.DAT` for a position (15.11.2026):
 - `map_file_open` (`ram:ffc4fe7e`) has a single caller and opens only `MAP00001.MAP`. NAV data is read through the block cache readers (`ram:ffc4f310`, `ram:ffc4f4f2`) sitting on `map_file_read` (`ram:ffc4feb2`, 18 callers) — i.e. by handle/index through the SDI layer, not by per-request name lookup.
 - **Rejected: MAP stores NAV file numbers.** Intersections of the MAP u32 value set with each disc's NAV number set are at chance level in both directions (Czech/Poland MAP: own 25/318 vs foreign 70/897 ≈ 7.9% vs 7.8%; Germany MAP: 84/897 vs 31/318).
 - **Rejected: TPMAP2 catalog block ↔ NAV file 1:1.** Catalog record counts (1/12/1320/132000 for CZ/POL; 1/12/1200/120000 for DE) do not correlate with NAV file counts (318/897).
-- **Active candidate: `NAV00001.DAT` is a paged sorted index.** Its blocks (322 records on CZ/POL, 413 on DE) share a common header; the first u32 key of each block increases monotonically across blocks on both discs (CZ: 0x5f52 → 0x9e29 → 0xddaa → 0xe5b28 → 0x289660; DE: 0x4ca1 → 0x7a72 → 0xab8d), a binary-searchable directory. A second u32 rises in small steps; a third stays near-constant (0x601e0…0x601f0); record chains inside blocks ascend with step ~0x3d. Whether keys are coordinates, file indices, or search terms is under decoding; consumer code in the firmware is being located via the block-read caller tree.
+- **Rejected: `NAV00001.DAT` as a coordinate→file index** (hypothesised 15.11 morning; resolved the same day): it is the place-name directory, see below.
+
+**Resolved 15.11 (same iteration): NAV00001 is the place-name directory, not a file selector.** Blocks interleave key-sorted records `<u32 key, u16 a, u16 b>` (the leading segment of block 0 uses packed coordinate keys `(y<<16)|x` on a constant ~0x00C00025 raster step) with text pools containing place names in canonical and cross-reference forms: CZ "RADVANICE A BARTOVICE [CZ]", "MOKRA HORA [CZ], BRNO-RECKOVICE"; DE "AACHEN", "AACHEN, ZECHE", "OSNABRÜCK LAND" (cp1252). Together with QUADIDX (search trees/UI strings) and RF (travel guides) it forms the destination-search system.
+
+**Numbering convention rejected 15.11 (static cross-disc test); mount-time scanning is the only remaining model.** Intersections of NAV file numbers between any pair of discs sit at chance level (1–3%). Decisive test: `NAV21793.DAT` is the cluster at 9.72°E 52.45°N (Braunschweig) on the Germany disc but the cluster at 13.98°E 41.01°N (Naples) on Major Roads of Europe — file numbers are disc-local project bookkeeping, so the firmware cannot derive a file from a position by any TeleAtlas numbering rule. Since NAV data reaches the reader only by handle and every NAV file carries bounds in its record headers, the firmware must enumerate `NAV*.DAT` at mount and keep an in-RAM `bounds → (file, entry)` index. Consequences for custom discs: file numbers are arbitrary within `NAV*.DAT`; entry tables and record bounds must be valid; QUADIDX/RF/NAV00001 are search-only and can ship as donor copies.
+
+**Mount path traced 15.11 (iteration 10), refining the model from "mount-time bulk scan" to "lazy per-file mount + runtime cluster directory":** `FUN_ram_ffc44f40` mounts the current NAV container on demand (26-byte primary header via handle `DAT_ram_ffc08edc`, then the entry-table header through the block cache); the state dispatcher `FUN_ram_ffc4522c` and request handler `FUN_ram_ffd47d60` (codes 0x41/0x4c/7/0xd/…) sit above it; the ISO directory is read on demand (`FUN_ram_ffd5ab92` → growing-block reads → `FUN_ram_ffd5cd90` building a **sorted array of directory records** searched by 8-byte filename); no code reference exists to any file-name string (names, including the `.DAT` extension, are copied into RAM at runtime). The navigation layer (`nfc/TPNData.cpp`) maintains a runtime **cluster directory** with lazy insertion — error strings "Failed to find leaf cluster", "cluster header not read into memory", "no space in cluster directory", `ldb_InsertCluster`, "Cluster is not in Memory" — i.e. cluster headers (bounds) are read and inserted when first needed, and position→cluster lookup searches this directory. The file name is never computed from a coordinate; a substituted file with a valid container and cluster bounds should be discoverable exactly like donor files. Filename iteration details (sequential probing vs directory order) do not affect a same-name substitution.
+
+**Test disc assembled 15.11** (workspace `analysis/testdisk/`, not part of this repository): pristine Czech/Poland 2010-2011 CloneCD copy with `/NAV21315.DAT;1` (1,991,121 bytes, smallest donor file ≥ generated container) replaced by the generated Krasnodar container (565 clusters) zero-padded to the same length. Verification: exactly the 973 extent sectors changed, EDC/ECC regenerate byte-identically, `.sub` preserved, all 565 entries decode with zero conflicts. Head-unit field test pending.
 
 Headless-analysis recipe, script inventory, and key firmware addresses: `docs/GHIDRA.md`.
 
@@ -317,7 +325,7 @@ Visual check (`tools/render_grid_check.py`, `results/grid-check-krasnodar.png`):
 
 `tools/tpnav2_nav_build.py` assembles a NAV container from scratch, mirroring observed real conventions: contiguous logical image starting at offset 320, `<IHHIHH>` entries with field06=0, uncompressed blocks (flag=0) packed after the table, and the 320-byte file head copied from a real container. The Krasnodar container holds 565 entries (the format's u32 entry_count allows more than the donor's 256) in 1,967,788 bytes; every entry round-trips byte-identically through our own reader with zero endpoint conflicts. Firmware acceptance of >256 entries and of our logical addressing scheme is verifiable only on a head unit.
 
-Remaining blocker for a bootable disc: the disc-level index (`QUADIDX.DAT`/CAT files) mapping geography to logical NAV addresses is not yet reverse-engineered.
+Remaining blocker for a bootable disc: road attribute semantics (class/speed/direction) for routing and a hardware confirmation of the mount-time scan model (record bounds in generated entry tables are valid; numbering is arbitrary).
 
 ## 7. Executable and emulation
 
@@ -357,13 +365,13 @@ No complete working chain for these steps is claimed. No CD-R recording or head-
 | Build a global routing graph | Cross-cluster stitching confirmed on the full Germany run: 20,254 of 82,807 boundary ends stitched (24.5 %), median offset ~10 m; remainder explained by absent neighbour countries / duplicate boundary numbers |
 | Convert coordinates to WGS84 | Fitted datum: X = 11.93M·lon, Y = 11.93M·lat (plate-carree-like; 1 unit ≈ 9.3 mm), 249 city-label anchors, residual median ~0.6 km; sufficient for OSM import, not for stitching to untouched clusters (~10 m would need a geometry-based refit) |
 | Edit a road and serialize all data | Graph mutation with full re-layout proven (idempotent, lossless, zero new validation errors on 5 clusters); NAV container write-back proven end-to-end (256/256 entries still decode) |
-| Build an updated map from OSM | **Cluster grid proven on real regions**: Olomouc 4,850/4,850 boundary ends stitched, Krasnodar 11,344/11,344, zero conflicts; NAV container from scratch (565 entries) round-trips byte-identically. Missing: disc-level index (QUADIDX/CAT), road attributes, head-unit test |
-| Validate a modified CD-R on hardware | Not performed |
+| Build an updated map from OSM | **Cluster grid proven on real regions**: Olomouc 4,850/4,850 boundary ends stitched, Krasnodar 11,344/11,344, zero conflicts; NAV container from scratch (565 entries) round-trips byte-identically. Disc-level addressing: numbering/convention schemes all rejected statically; mount-time entry-table scan is the surviving model, awaiting mount-path trace + hardware test. Missing: road attributes, head-unit test |
+| Validate a modified CD-R on hardware | Substitution disc assembled and statically verified (extent-only change, EDC/ECC regenerate, `.sub` preserved); burning and head-unit test pending |
 
 ## 10. Next research target
 
-Coordinate→NAV-file open path: trace how the firmware selects a `NAVxxxxx.DAT` for a position — starting from `map_open_directory` (`ram:ffcf0798`, callers in the analysis tree) and checking whether TPMAP2 carries NAV file numbers. This replaces the former "reverse QUADIDX" target: iteration 8 (report §4.11, technical report §4.1) established that QUADIDX/RF are name-search indexes (GIS + travel guides per INFO.TXT), not routing address maps, and that their headers are fully decoded; a custom disc can plausibly keep donor indexes until proven otherwise.
+**Field-test the substitution disc on a head unit.** Static analysis has eliminated every numbered/convention addressing scheme (MAP↔NAV numbers, TPMAP2 catalog 1:1, NAV00001, TeleAtlas file-numbering convention), and the mount path is traced: lazy per-file mount through the on-demand-sorted ISO directory plus a runtime cluster directory (`ldb_InsertCluster`, "Failed to find leaf cluster"). A pristine Czech/Poland 2010-2011 CloneCD copy with `NAV21315.DAT` replaced by the generated 565-cluster Krasnodar container (same byte length, EDC/ECC regenerated, `.sub` preserved) is assembled and statically verified; burning instructions and the HU checklist are in the workspace `analysis/testdisk/README.md`. On the HU: disc acceptance, map display around Krasnodar, trial routing.
 
-In parallel: road attributes for routing (class, speed, direction) from link-flag/list4 correlations, and a geometry-based datum refit (~10 m) only for discs that stitch generated clusters to untouched TeleAtlas neighbours.
+In parallel: road attributes for routing (class, speed, direction) from link-flag/list4 correlations, LZ compression for tighter generated clusters, and a geometry-based datum refit (~10 m) only for discs that stitch generated clusters to untouched TeleAtlas neighbours.
 
 Recover nonlocal/cross-cluster TPNAV2 endpoint references. Aligning the resulting graph with TPMAP2 geometry should also help resolve the semantics of `0x10` and `0xf0` without guessing from appearance alone.

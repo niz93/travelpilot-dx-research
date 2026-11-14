@@ -64,6 +64,8 @@ export MSYS_NO_PATHCONV=1
 | `FindStringXrefs.java` | Full xref sweep for one string: Ghidra references, raw u32 pointer scan over all memory; exports referring functions. Args: `<out-dir> <needle>` |
 | `DumpAddressBytes.java` | Hex dump of RAM addresses through the program memory map. Args: `<out.txt> <addr> <len> [...]` |
 | `ExportCallers.java` | Export callers of the map I/O trio (`map_file_read`, `map_file_open`, `map_open_directory`) |
+| `TraceMount.java`, `TraceMount2.java`, `TraceMount4.java` | Mount-path tracing: callers of the NAV container mount (`ffc44f40`), the state dispatcher (`ffc4522c`), request handlers, and the ISO directory readers; instruction scan for handle globals. Export .c/.asm per caller. Args: `<out-dir>` |
+| `DecompileAt.java` | Decompile/disassemble functions at given addresses. Args: `<out-dir> <addr> [...]` |
 | `ExportFunctionRange.java`, `ExportInstructionRange.java`, `ExportV810Functions.java`, `InspectMemory.java`, `InspectV810.java` | Bulk disassembly/decompilation helpers used during recovery |
 
 ## Key firmware addresses (NAVECE_M.EXE, Germany disc)
@@ -78,6 +80,11 @@ export MSYS_NO_PATHCONV=1
 | ram:ffc4feb2 | `map_file_read` — block read, 18 callers (block cache path) |
 | ram:ffcf0798 | `map_open_directory` — TPMAP2 plugin open/read of `MAP00001.MAP` |
 | ram:ffc4f310 / ram:ffc4f4f2 | NAV block cache readers above `map_file_read` |
+| ram:ffc44f40 | NAV container mount: 26-byte primary header via handle `DAT_ram_ffc08edc`, then entry-table header |
+| ram:ffc4522c | mount state dispatcher (states 0/1/2/0xc…) above `ffc44f40` |
+| ram:ffd47d60 | mount/media request handler (codes 0x41/0x4c/7/0xd/0x11/…) |
+| ram:ffd5ab92 → ffd5aa28 → ffd5cd90 | on-demand ISO directory read (growing blocks) → sorted directory-record array, lookup by 8-byte filename |
+| strings @ ram:ffc08caa region | `nfc`/TPNData layer: "leaf cluster", "cluster directory", `ldb_InsertCluster` — runtime cluster directory with lazy insertion |
 
 ## Findings these scripts support
 
@@ -88,3 +95,10 @@ export MSYS_NO_PATHCONV=1
   RAM at runtime.
 - NAV containers are read by index/handle through the block cache, not by name
   on each request.
+- Mount path (iteration 10): lazy per-file mount — the ISO directory is read on
+  demand into a sorted record array, the current NAV container is mounted by
+  reading its primary header and entry table, and a runtime cluster directory
+  (`ldb_InsertCluster`, "Failed to find leaf cluster") holds cluster bounds for
+  position lookup. The file name is never computed from a coordinate, so a
+  same-name NAV substitution is discoverable like any donor file (field test
+  pending). See `docs/TECHNICAL_REPORT.md` §4.2.
