@@ -75,11 +75,36 @@ def catalog(blk: bytes):
     return recs
 
 
-def parse_segment(blk: bytes, start: int, end: int, lon_range, lat_range):
+def parse_segment(blk: bytes, start: int, end: int, lon_range, lat_range,
+                  expected_pairs=None):
+    """Decode one segment record stream.
+
+    ``expected_pairs`` is the catalog ``cnt`` field: number of coordinate
+    pairs in this segment. When given, exactly that many pairs are read after
+    the preamble, then an ENDMARK (01 00) is expected. This avoids the classic
+    false-ENDMARK desync: a lat around 45.0000-45.0039 encodes as
+    u32 0x20040001..0x2004FFFF whose LE bytes start with 01 00, which the
+    bare marker scan would misread as the segment end and desynchronise.
+    """
     cur = start
     pairs, attrs, links, skipped = [], [], [], []
     if blk[cur:cur + 4] == b"\x0c\x00\x0c\x00":
         cur += 4
+    if expected_pairs:
+        for _ in range(int(expected_pairs)):
+            if cur + 8 > end:
+                skipped.append(cur)
+                break
+            lo, la = struct.unpack_from("<II", blk, cur)
+            lon, lat = lo * 360 / 2**32, la * 360 / 2**32
+            if not plausible(lon, lat, lon_range, lat_range):
+                skipped.append(cur)
+                break
+            pairs.append((round(lon, 6), round(lat, 6)))
+            cur += 8
+        if blk[cur:cur + 2] != b"\x01\x00":
+            skipped.append(cur)
+        return pairs, attrs, links, skipped, cur + 2
     while cur < end - 1:
         two = blk[cur:cur + 2]
         if two == b"\x01\x00":
@@ -91,7 +116,7 @@ def parse_segment(blk: bytes, start: int, end: int, lon_range, lat_range):
             links.append({"block": boff, "size": bsz, "sub": sub})
             cur += 12
             continue
-        if blk[cur + 1] == 0x00 and blk[cur] not in (0x00, 0x0c):
+        if (blk[cur + 1] == 0x00 and 0x13 <= blk[cur] <= 0x1C):
             val, = struct.unpack_from("<H", blk, cur + 2)
             attrs.append({"kind": "short", "type": blk[cur], "value": val})
             cur += 4

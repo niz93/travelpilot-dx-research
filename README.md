@@ -109,6 +109,8 @@ See [the detailed Windows guide](docs/WINDOWS.md).
 - **NAV2xxxx.DAT geometry decoded** (2026-11-16): the type-0x001a blocks carry road geometry as u32 lon/lat pairs (degrees = value·360/2³²), cross-block node links, and street-list attributes whose name offset resolves into the region's own string table — geometry ↔ streets ↔ names are bound within one region (`docs/NAV2_GEOMETRY.md`, decoder `tools/tpdx_geometry.py`).
 - **Firmware lineage resolved** (three-way diff of the 2001/2003/2010 executables, `tools/fw_match_three_way.py`): the map-bounds gate is present in **all** generations (not an anti-copy addition); TMC support arrives with the 2003 generation, C++ RTTI with the 2010 one; ~61–65 % of functions match exactly across a nine-year span (`docs/TECHNICAL_REPORT.md` §7.1).
 - **The disc-triggered "firmware install" is a language-image rewrite of the boot flash** (AM29LV160, 2 MiB as two 1 MiB+4-byte-header `V01_*.DAT` payloads, obfuscation unresolved). Custom discs copy the donor's language pair byte-identical; no new firmware payloads are needed for a map-only update (`docs/TECHNICAL_REPORT.md` §7.2).
+- **Generated OSM region renders on a head unit** (2026-11-16, COMAND 2.0, disc v8 = generated TPMAP2 map of Krasnodar Krai + regenerated NAV2 container with full catalog stack): road network, street geometry and real place labels (KRASNODAR, TLUSTENKHABL) drawn with correct positions at 5 km/2 km/500 m zooms — field screenshots in `docs/hu-tests/`. The unit's pseudo-Cyrillic font renders Latin names as Cyrillic lookalikes. The relocated NAV file (ISO directory-driven) is accepted by the unit. Open defects: freeze/reboot at 50/20 km zooms over the generated region (position-dependent; level-1/2 donor-envelope caps cured only the 10 km case) and the destination city list still coming from the donor's QUADIDX.
+- **QUADIDX.DAT record format decoded** (2026-11-16, `docs/QUADIDX_FORMAT.md`): record stream with settlement centroids (sort=1, u24be coordinates, 2²⁴ = 360°) and POI/address records per quadtree cell; renaming 32 settlement records to a new city in-place left the unit's city list unchanged, so the "Ortsliste" source structure is still open (tools: `quadidx_records.py`, `quadidx_rename_city.py`).
 
 Coordinates produced by the renderers are **signed internal TPMAP2/TPNAV2 integer units, not WGS84**; the fitted datum in `results/tpdx-datum.json` converts them (`tools/tpdx_coords.py`).
 
@@ -171,7 +173,7 @@ Not yet implemented:
 - TPMAP2 serialization (TPNAV2 graph serialization is proven);
 - firmware acceptance tests of generated clusters and of >256 entries per NAV file (verifiable only on a head unit);
 - emulation of a complete head unit;
-- validation of a modified CD-R on physical hardware (**partially resolved 2026-11-15/16**: burning solved via CloneCD + Teleatlas profile at 1x with weak-sector amplification; donor-layout discs with generated TPNAV2 content and the v4 in-place patched disc with a generated TPMAP2 map were accepted by a COMAND-class head unit; a from-scratch ISO rebuild (v2) and the v3 MAP+NAV patch were rejected — the weak-sector protection layer is enforced and MAP-header validation in the firmware is the remaining acceptance gate, see `docs/TECHNICAL_REPORT.md` §3.1, §8.1, §10).
+- validation of a modified CD-R on physical hardware (**partially resolved 2026-11-15/16**: burning solved via CloneCD + Teleatlas profile at 1x with weak-sector amplification; donor-layout discs with generated TPNAV2 content and the v4 in-place patched disc with a generated TPMAP2 map were accepted by a COMAND-class head unit; a from-scratch ISO rebuild (v2) and the v3 MAP+NAV patch were rejected — the weak-sector protection layer is enforced and MAP-header validation in the firmware is the remaining acceptance gate, see `docs/TECHNICAL_REPORT.md` §3.1, §8.1, §10). **2026-11-16 follow-up**: a fully generated region (TPMAP2 map + catalog-stack NAV2) renders on the unit with correct place labels at street-level zooms (`docs/hu-tests/`); remaining unit-side defects: 50/20 km freeze on generated regions, donor city list in destination search. Note: the tested drive does not read CD-RW media at all — use CD-R.
 
 The included same-length CloneCD patcher is experimental. Work only with copies, preserve the original `.ccd`, `.img`, and `.sub`, and do not assume that a byte-correct image will be accepted by a head unit.
 
@@ -180,6 +182,8 @@ The included same-length CloneCD patcher is experimental. Work only with copies,
 - [Windows 10 visualization guide](docs/WINDOWS.md)
 - [Technical report](docs/TECHNICAL_REPORT.md)
 - [NAV2xxxx.DAT geometry-block format](docs/NAV2_GEOMETRY.md)
+- [QUADIDX.DAT record format](docs/QUADIDX_FORMAT.md)
+- [Head-unit field-test screenshots](docs/hu-tests/)
 - [COMAND DX CD drive hardware notes](docs/hardware/COMAND_DX_CD_drive.md)
 - [Ghidra firmware-analysis recipe](docs/GHIDRA.md)
 - [References and provenance](docs/SOURCES.md)

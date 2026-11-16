@@ -103,11 +103,40 @@ AREA_ARCHETYPES = {
 MINIMAL_BLOCK = struct.pack("<IHHHHHH", 16, 0, 0, 0, 0, 0, 0)
 
 
-def build_block(areas, lines, points):
+class Caps:
+    """Per-level hard limits emulating donor-observed envelopes (see analysis/
+    a4-map-header-audit.md and the HU crash report 2026-11-16: renderer on
+    50/20/10 km (level L2) hangs/reboots on tiles beyond donor maxima)."""
+
+    def __init__(self, block=59000, lines=1200, areas=1000,
+                 area_pts=0, line_pts=0):
+        self.block = block          # block byte budget
+        self.lines = lines          # max line records per tile
+        self.areas = areas          # max area records per tile
+        self.area_pts = area_pts    # max points per area record (0 = none)
+        self.line_pts = line_pts    # max points per line record (0 = none)
+
+
+LEVEL_CAPS = {
+    # L0/L1: donor envelope — L1 max block 4264 B, 63 areas, 24-pt polygons;
+    # L0 max block 1028 B, 10 areas, 13-pt polygons. Our oversized L1 sea
+    # polygons (up to 1885 pts) crash the 50/20 km renderer (HU v8 test).
+    0: Caps(block=1024, lines=1200, areas=10, area_pts=13, line_pts=0),
+    1: Caps(block=4260, lines=1200, areas=60, area_pts=24, line_pts=0),
+    # L2: donor envelope — max block 7904 B, 137 lines, 136 areas, 29-pt
+    # polygons, 99-pt lines (measured over all 1320 donor L2 tiles).
+    2: Caps(block=7900, lines=130, areas=130, area_pts=28, line_pts=96),
+    # L3: renders fine with much larger blocks; keep the loose v5 limits.
+    3: Caps(),
+}
+
+
+def build_block(areas, lines, points, caps=None):
     """areas: [(kind, [(rel x,y)...])]; lines: [(kind, [(rel x,y)...])];
     points: [(kind, relx, rely, [label text...])]. Returns block bytes."""
+    caps = caps or Caps()
     header_len = 16
-    # u16 pool offsets and the <60000 block budget: thin long records until
+    # u16 pool offsets and the block budget: thin long records until
     # the estimated block fits, halving vertex counts each pass.
     def estimate(areas, lines, points):
         n_a = sum(len(p) for _, p in areas)
@@ -128,19 +157,38 @@ def build_block(areas, lines, points):
             out.append((kind, p))
         return out
 
+    def decimate(seq, cap):
+        out = []
+        for kind, p in seq:
+            if cap and len(p) > cap:
+                stride = (len(p) + cap - 1) // cap
+                q = p[::stride]
+                if q[-1] != p[-1]:
+                    q = q + [p[-1]]
+                p = q
+            out.append((kind, p))
+        return out
+
+    # per-record point caps first (donor never exceeds 29-pt areas / 99-pt
+    # lines on L2; oversized polygons crash the renderer)
+    areas = decimate(areas, caps.area_pts)
+    lines = decimate(lines, caps.line_pts)
     guard = 0
-    while estimate(areas, lines, points) >= 59000 and guard < 12:
+    while estimate(areas, lines, points) >= caps.block and guard < 16:
         guard += 1
         areas = thin(areas)
         lines = thin(lines)
-    # record count is also bounded: each line record costs 12 bytes of header
-    # and pushes pool offsets up; dense urban cells exceed u16 otherwise.
-    if len(areas) > 1000:
-        areas.sort(key=lambda t: -len(t[1]))
-        areas = areas[:1000]
-    if len(lines) > 1200:
-        lines.sort(key=lambda t: -len(t[1]))
-        lines = lines[:1200]
+    # record-count caps: drop every other record to spread the loss, then
+    # re-decimate (pool offsets shift every pass)
+    guard = 0
+    while (len(areas) > caps.areas or len(lines) > caps.lines) and guard < 16:
+        guard += 1
+        if len(areas) > caps.areas:
+            areas = areas[::2]
+        if len(lines) > caps.lines:
+            lines = lines[::2]
+        areas = decimate(areas, caps.area_pts)
+        lines = decimate(lines, caps.line_pts)
     a_off = header_len if areas else 0
     pool_base = header_len + len(areas) * 16 + len(lines) * 12 + len(points) * 12
     a_records = b""
@@ -509,7 +557,7 @@ def main():
         areas = [(0x40, land_rect(f))]
         for pairs in sea_areas(f, rect):
             areas.append((0x03, pairs))
-        put(1, idx, build_block(areas, [], []))
+        put(1, idx, build_block(areas, [], [], caps=LEVEL_CAPS[1]))
 
     # ---- level 2: land + sea + major roads + towns
     keep2 = {"motorway", "trunk", "primary"}
@@ -554,7 +602,7 @@ def main():
             rx, ry = Grid.to_rel(f, x, y)
             points.append((0x2b if place == "town" else 0x2c, rx, ry,
                            [name.upper()]))
-        put(2, idx, build_block(areas, lines, points))
+        put(2, idx, build_block(areas, lines, points, caps=LEVEL_CAPS[2]))
 
     # ---- level 3: content cells only (coast, towns, roads)
     width3, height3 = grid.grid_size(3)
