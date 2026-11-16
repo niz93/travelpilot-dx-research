@@ -52,6 +52,11 @@ The presence of `gdf_syntax.GDF_3_0.1.1` and related compilation metadata establ
 14. DRIVE2 (Russian), earlier companion post by the same author introducing the format-research effort and pointing to the OSM Community thread  
     https://www.drive2.ru/b/459571122472515752/
 
+15. Blaupunkt TravelPilot DX-R70 and DX-V service schematics — community-distributed scan dumps (drawing numbers 8 638 214 861 and 8 622 403 404), located via public search indexes; used for the CD-chain and processor-board analysis in `docs/hardware/COMAND_DX_CD_drive.md`. The PDFs themselves are third-party material and are not redistributed here.
+
+16. DRIVE2 (Russian), COMAND DX community notes on Latin-transliterated Russian UI strings and on the "restore disc" that revives a drive refusing navigation CDs  
+    https://www.drive2.ru/l/466415582355391258/ , https://www.drive2.ru/l/460055182466631316/ , https://www.drive2.ru/l/471846070284976491/
+
 The external compatibility listings are cross-references, not hardware validation. Their published model-year ranges and naming conventions vary.
 
 ## Third-party software

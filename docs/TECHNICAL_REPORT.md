@@ -38,6 +38,14 @@ Recovered Mode 1 layout:
 
 For Germany, 335,541 of 335,584 sectors reconstructed exactly. For Czech/Poland, 128,648 of 128,912 matched exactly. Remaining differences were confined to service areas; user data matched. Special sector contents and subchannel anomalies must not automatically be “repaired.” These observations alone do not prove copy protection.
 
+### 3.1 Weak-sector copy protection (confirmed 2026-11-15)
+
+Full-image EDC/ECC verification (`tools/verify_clonecd_image.py`) of a pristine Czech/Poland 2010-2011 master shows **264 sectors with intentionally corrupted EDC** in the unallocated gap between the volume descriptors and the first file extent (LBA 807–5010 on that disc, user area filled with a `0x55` pattern). The corrupt LBAs are irregularly spaced (address diffs 1, 5, 10, 20, 21, 25, 31, 35); ECC P/Q are *not* corrupted, so the sectors read fine through error correction but fail an EDC check — the classic weak-sector signature. A Germany 2013-2014 disc shows the same mechanism with a different count (20 scattered sectors from stamp aging).
+
+A head-unit field test (2026-11-15) confirmed this layer is load-bearing: a **fully rebuilt ISO** (new volume layout, all sectors with correct EDC/ECC, generated TPMAP2 map) was rejected by the HU ("not a navigation CD" after rhythmic re-reading of one sector), while byte-identical-except-patches copies of the original image were accepted. The surviving build method is therefore **in-place patching of the donor image** (`tools/patch_donor_image.py`): replace only the MAP extent and the patched NAV extent, recompute EDC/ECC for touched sectors, keep the protection gap, subchannel, TOC and file order untouched.
+
+Independently, the CloneCD "Teleatlas" burn profile amplifies 166 sectors in LBA 93–618 (regular blocks of ~10 with stride 31–41); those sectors carry *correct* EDC in the image and belong to a second, mastering-related layer the recorder expects. Both layers must survive a burn: CloneCD + Teleatlas profile + lowest speed + "Weak Sectors: Amplify".
+
 ## 4. Main file groups
 
 | Group | Established role or status |
@@ -130,6 +138,12 @@ On three primary samples:
 - the first L0 directory entry follows all 64 descriptor bytes rather than aliasing the final descriptor.
 
 Descriptor bytes `+1/+2` hold x/y subdivisions; `+3` is the coordinate shift. Byte zero matches the level number. Bytes `+4..+7` are not fully classified. The level count is the product of subdivision factors through that level.
+
+Extended header survey (five discs + generated map, 2026-11-15):
+
+- uint32 at `0x00`: low uint16 = offset of the L0 directory (0x03d8–0x042c, matches string-length variability); **high uint16 (0x1ee0–0x4fb8 across discs) remains unclassified** — it does not correlate with file size, block count, directory sizes, or any simple function of them, and all simple checksum hypotheses (CRC32, byte sums) are rejected. Firmware semantics unknown; the generated map keeps the donor value.
+- uint32 at `0x18` = address of a 64-byte header block plus `0x40000` (code uses the low 16 bits); bytes `0x1c..0x1f` and `0x20..0x23` are zero on every surveyed disc.
+- uint32 at `0x04` = exact file size (all surveyed discs, including the generated map).
 
 ### 5.3 Block layout
 
@@ -333,11 +347,53 @@ Remaining blocker for a bootable disc: road attribute semantics (class/speed/dir
 
 Static decoder recovery has been more productive than treating a generic VM as a ready viewer. A full head-unit UI or emulation environment is not implemented.
 
+### 7.1 Firmware lineage across disc generations (three-way diff, 2026-11-16)
+
+The navigation executables of three disc generations were compared function-by-function with the Ghidra hash pipeline (`docs/GHIDRA.md`) and the standalone matcher `tools/fw_match_three_way.py`:
+
+| Generation | Disc year | Executable | Functions |
+|---|---|---|---|
+| 182.01 | 2001 | `NAVECE_2001.EXE` | 2,480 |
+| 289.25 | 2003 | (Germany 2003 disc) | — |
+| 390.23 | 2010 | `NAVECE_M.EXE` | — |
+
+Exact body-hash matches: 2001∩2003 ≈ 65 %, 2001∩2010 ≈ 61 % of the 2001 function set. The break in the MAP loader between 182.01 and 289.25 is visible as a changed function cluster.
+
+Findings:
+
+- **The map-bounds gate exists in all three generations.** The function that rejects coordinates outside the disc's coverage (2010: `FUN_ffcf8b1c`, 2003: `FUN_ffcea6d4`) has an exact-hash counterpart in the 2001 executable as well (698 instructions; the gate block is verbatim in the decompilation). The bounds gate is therefore **not** an anti-copy addition of later discs — it is original coverage logic.
+- **TMC (traffic message) support appears with 289.25** (`CidBestOneCell*` symbols absent from 182.01).
+- **C++ runtime type information appears with 390.23**; the 2001/2003 builds lack the RTTI sections.
+- ETAK/Bosch copyright strings are present in all three generations, consistent with a single toolchain lineage.
+
+### 7.2 "Firmware update from disc" = language-image rewrite of the boot flash
+
+Field observation: inserting certain discs (e.g. the 2003 Germany disc) makes the head unit visibly "install firmware" before navigation starts; swapping between two same-generation discs does not. Static analysis of the executable (`tpmap32v\tpmapplg.cpp`, embedded source paths, offset ≈ 0xddb0) identifies this as a rewrite of the unit's **data flash** with the language-specific UI images shipped on the disc:
+
+- File names `V01_006X.DAT` / `V01_N06X.DAT` and a device list `SFlash,BFlash,Card1,Card2,Card3,CDROM` are embedded in the executable.
+- Each `.DAT` pair member is 1,048,580 bytes: a 4-byte header `47 0f 00 00` (u16 = language letter) plus a 1 MiB payload. Two members = 2 MiB, matching the **AM29LV160** boot/data flash (BFlash, IC D5830 on the processor board, see `docs/hardware/COMAND_DX_CD_drive.md`).
+- The decision whether to reprogram is taken from the image header already present in flash — this is why a language/generation change triggers the install pass and like-for-like disc swaps do not.
+- The payload is obfuscated (not a plain bitmap/ROM image); the transform is unresolved.
+
+Consequence for custom discs: the language images travel with the donor disc and can be **copied as-is** — a map-only update (e.g. a Russian-region disc built from a Czech/Poland donor) needs no new firmware payloads, only the donor's V01 pair preserved byte-identical.
+
 ## 8. Modification and recording experiments
 
 The experimental same-length patcher replaces an ISO extent only in a CloneCD copy, requires equal byte length, recalculates affected EDC/ECC, and copies `.ccd` and `.sub`. It can refuse to overwrite known special sectors when supplied with a verification report.
 
 The regression test changed one byte in `CONFIG.SYS`, affecting only LBA 5037; all other 128,911 sectors and `.sub` were preserved. This proves a low-level operation on a PC, not map editing or compatibility with a head unit.
+
+### 8.1 Head-unit field tests (2026-11-15, Mercedes COMAND 2.5-class DX unit)
+
+| Disc | Content | Result |
+|---|---|---|
+| №3 | untouched CloneCD copy of CZ/POL 2010-2011 | **Accepted** (CloneCD 5.3.4.0 + Teleatlas profile, 1x, weak-sector amplify) |
+| №2 | donor image with generated Krasnodar TPNAV2 container in `NAV21315.DAT` | **Accepted**; search index stays donor-side as predicted, map read confirmed |
+| v2 | **fully rebuilt ISO** with generated TPMAP2 map of Krasnodar Krai (all new sectors, correct EDC/ECC) | **Rejected** — HU retries one sector rhythmically, then "not a navigation CD" |
+| v3 | donor image patched in place: generated TPMAP2 MAP extent + Krasnodar NAV extent | **Rejected** — HU reads through the disc normally (no rhythmic re-read loop) but refuses activation with "insert navigation CD"; MAP-header validation in the firmware is the suspected gate |
+| v4 | donor image, Poland/Czech regions removed, generated TPMAP2 Krasnodar Krai map | **Accepted** — but the Krasnodar geometry is not visible in the rendered map and `KRASNODAR` does not appear in destination search (search index stays donor-side); where Europe was removed the renderer shows sea at 100–200 km scale, while European roads still appear at ≤500 km, so remaining visuals come from untouched donor data |
+
+The v2 rejection, combined with the accepted donor-layout discs, isolates the disc-level requirements that a from-scratch build must satisfy: the weak-sector protection gap, the original TOC/file order, and possibly fixed-LBA signature checks. The in-place patcher (`tools/patch_donor_image.py`) is the working build path until the protection check is fully characterized.
 
 A real map update additionally requires:
 
@@ -346,10 +402,10 @@ A real map update additionally requires:
 3. TPMAP2 and TPNAV2 serialization;
 4. rebuilt QUADIDX and related search/routing tables;
 5. version and integrity reconciliation;
-6. ISO/raw reconstruction without losing original characteristics;
+6. ISO/raw reconstruction **preserving the protection layers** (or a head unit that accepts regenerated media);
 7. CD-R recording and physical head-unit testing.
 
-No complete working chain for these steps is claimed. No CD-R recording or head-unit test was performed.
+No complete working chain for all of these steps is claimed.
 
 ## 9. Current capability matrix
 
@@ -366,12 +422,14 @@ No complete working chain for these steps is claimed. No CD-R recording or head-
 | Convert coordinates to WGS84 | Fitted datum: X = 11.93M·lon, Y = 11.93M·lat (plate-carree-like; 1 unit ≈ 9.3 mm), 249 city-label anchors, residual median ~0.6 km; sufficient for OSM import, not for stitching to untouched clusters (~10 m would need a geometry-based refit) |
 | Edit a road and serialize all data | Graph mutation with full re-layout proven (idempotent, lossless, zero new validation errors on 5 clusters); NAV container write-back proven end-to-end (256/256 entries still decode) |
 | Build an updated map from OSM | **Cluster grid proven on real regions**: Olomouc 4,850/4,850 boundary ends stitched, Krasnodar 11,344/11,344, zero conflicts; NAV container from scratch (565 entries) round-trips byte-identically. Disc-level addressing: numbering/convention schemes all rejected statically; mount-time entry-table scan is the surviving model, awaiting mount-path trace + hardware test. Missing: road attributes, head-unit test |
-| Validate a modified CD-R on hardware | Substitution disc assembled and statically verified (extent-only change, EDC/ECC regenerate, `.sub` preserved); burning and head-unit test pending |
+| Validate a modified CD-R on hardware | **CD-R burning solved** (CloneCD + Teleatlas profile, 1x, amplify); donor-layout discs with generated TPNAV2 content accepted by the HU. From-scratch ISO rebuild **rejected** by the HU — weak-sector protection layer (§3.1) is enforced. In-place patched discs: v3 (generated MAP+NAV) rejected at activation, v4 (generated MAP, donor regions removed) accepted — but generated geometry not yet rendered, MAP-header validation is the open gate (§8.1, §10) |
 
 ## 10. Next research target
 
-**Field-test the substitution disc on a head unit.** Static analysis has eliminated every numbered/convention addressing scheme (MAP↔NAV numbers, TPMAP2 catalog 1:1, NAV00001, TeleAtlas file-numbering convention), and the mount path is traced: lazy per-file mount through the on-demand-sorted ISO directory plus a runtime cluster directory (`ldb_InsertCluster`, "Failed to find leaf cluster"). A pristine Czech/Poland 2010-2011 CloneCD copy with `NAV21315.DAT` replaced by the generated 565-cluster Krasnodar container (same byte length, EDC/ECC regenerated, `.sub` preserved) is assembled and statically verified; burning instructions and the HU checklist are in the workspace `analysis/testdisk/README.md`. On the HU: disc acceptance, map display around Krasnodar, trial routing.
+The v3 rejection (normal disc read, then activation refused) points at MAP-header validation in the firmware. Next: locate and understand the TPMAP2 header acceptance checks in `NAVECE_M.EXE` (V810, Ghidra project) — what fields the loader requires beyond geometry — and diff the MAP loader between the 2003 and 2010 executables to see what changed at the 289.25 break (§7.1). The v4 acceptance shows the protection layer and donor layout are satisfiable; closing the header-validation gap should make a generated-region map actually render.
 
-In parallel: road attributes for routing (class, speed, direction) from link-flag/list4 correlations, LZ compression for tighter generated clusters, and a geometry-based datum refit (~10 m) only for discs that stitch generated clusters to untouched TeleAtlas neighbours.
+In parallel: characterize the weak-sector check precisely (which LBAs are read and what response is expected), resolve the NAV2 geometry attribute semantics (id bytes, `k` counter, key table — `docs/NAV2_GEOMETRY.md`), road attributes for routing (class, speed, direction) from link-flag/list4 correlations, LZ compression for tighter generated clusters, and a geometry-based datum refit (~10 m) only for discs that stitch generated clusters to untouched TeleAtlas neighbours.
 
-Recover nonlocal/cross-cluster TPNAV2 endpoint references. Aligning the resulting graph with TPMAP2 geometry should also help resolve the semantics of `0x10` and `0xf0` without guessing from appearance alone.
+Recover nonlocal/cross-cluster TPNAV2 endpoint references. Aligning the resulting graph with NAV2 geometry should also help resolve the semantics of `0x10` and `0xf0` without guessing from appearance alone.
+
+Hardware-side enablers: dump the three flash devices (SFlash via the ERIC-2 emulator interface, BFlash via the SPY pins — see `docs/hardware/COMAND_DX_CD_drive.md`) to capture a real disc-triggered language-image rewrite, and, if a CD-emulator path materializes, replace CD-R burn cycles with direct image swapping.
